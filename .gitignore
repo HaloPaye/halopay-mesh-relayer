@@ -1,2 +1,4 @@
 /target
+*.key
+*.db
 Cargo.lock
