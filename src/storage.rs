@@ -74,12 +74,15 @@ impl Storage {
     }
 
     fn enforce_size_limit(&mut self) -> Result<()> {
-        // SQLite page size * page count gives DB size
-        let mut stmt = self.conn.prepare("PRAGMA page_count")?;
-        let page_count: i64 = stmt.query_row([], |row| row.get(0))?;
+        let page_count: i64 = {
+            let mut stmt = self.conn.prepare("PRAGMA page_count")?;
+            stmt.query_row([], |row| row.get(0))?
+        };
         
-        let mut stmt2 = self.conn.prepare("PRAGMA page_size")?;
-        let page_size: i64 = stmt2.query_row([], |row| row.get(0))?;
+        let page_size: i64 = {
+            let mut stmt2 = self.conn.prepare("PRAGMA page_size")?;
+            stmt2.query_row([], |row| row.get(0))?
+        };
         
         let size_bytes = page_count * page_size;
         let max_size = 50 * 1024 * 1024; // 50MB
