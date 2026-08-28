@@ -1,4 +1,6 @@
-#[tokio::main]
-async fn main() {
-    println!("HaloPay Mesh Relayer initializing Bluetooth/LoRaWAN listeners...");
+pub mod crypto;
+pub mod protocol;
+
+fn main() {
+    println!("Hello, world!");
 }
