@@ -3,11 +3,18 @@ use tokio::sync::{broadcast, Mutex};
 use tokio::net::TcpListener;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use halopay_mesh_relayer::crypto::generate_keypair;
-use halopay_mesh_relayer::storage::Storage;
-use halopay_mesh_relayer::transport::sim::SimTransport;
-use halopay_mesh_relayer::gossip::{GossipNode, TxPayload};
-use halopay_mesh_relayer::settlement::SettlementClient;
+#[path = "../crypto.rs"] pub mod crypto;
+#[path = "../protocol.rs"] pub mod protocol;
+#[path = "../storage.rs"] pub mod storage;
+#[path = "../transport/mod.rs"] pub mod transport;
+#[path = "../gossip.rs"] pub mod gossip;
+#[path = "../settlement.rs"] pub mod settlement;
+
+use crypto::generate_keypair;
+use storage::Storage;
+use transport::sim::SimTransport;
+use gossip::{GossipNode, TxPayload};
+use settlement::SettlementClient;
 
 async fn run_mock_api() {
     let listener = TcpListener::bind("127.0.0.1:8080").await.unwrap();
@@ -30,7 +37,7 @@ async fn run_mock_api() {
                                     if let Some(s) = p.as_str() {
                                         use base64::{Engine as _, engine::general_purpose};
                                         if let Ok(decoded) = general_purpose::STANDARD.decode(s) {
-                                            let h = halopay_mesh_relayer::crypto::hash_payload(&decoded);
+                                            let h = crypto::hash_payload(&decoded);
                                             settled.push(h.to_hex().as_str().to_string());
                                         }
                                     }
@@ -135,7 +142,7 @@ async fn main() {
     // A and D inject exact same transaction simultaneously
     let tx4 = TxPayload { nonce: 4, amount_usdc: 20.0 };
     let json = serde_json::to_vec(&tx4).unwrap();
-    let encrypted = halopay_mesh_relayer::crypto::encrypt_payload(&json, 12345).unwrap();
+    let encrypted = crypto::encrypt_payload(&json, 12345).unwrap();
     
     // 5. Malicious Payload
     println!("--- SCENARIO 5: Malicious Payload ---");

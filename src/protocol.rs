@@ -90,6 +90,41 @@ impl Packet {
     }
 }
 
+/// Helper to fragment an already-signed packet for relay
+pub fn fragment_packet(packet: &Packet) -> Vec<Packet> {
+    let max_packet_size = 256;
+    let header_size = 108;
+    let max_payload_per_packet = max_packet_size - header_size;
+    let chunk_header_size = 2; // index, total
+    let max_chunk_data = max_payload_per_packet - chunk_header_size;
+    
+    if header_size + packet.payload.len() <= max_packet_size {
+        return vec![packet.clone()];
+    }
+    
+    let logical_payload = &packet.payload;
+    let total_chunks = (logical_payload.len() + max_chunk_data - 1) / max_chunk_data;
+    
+    let mut packets = Vec::new();
+    for i in 0..total_chunks {
+        let start = i * max_chunk_data;
+        let end = std::cmp::min(start + max_chunk_data, logical_payload.len());
+        let chunk_data = &logical_payload[start..end];
+        
+        let mut payload = Vec::new();
+        payload.push(i as u8);
+        payload.push(total_chunks as u8);
+        payload.extend_from_slice(chunk_data);
+        
+        let mut p = packet.clone();
+        p.type_byte |= 0x80;
+        p.payload_length = payload.len() as u16;
+        p.payload = payload;
+        packets.push(p);
+    }
+    packets
+}
+
 /// Helper to build packets from a logical message
 pub fn build_packets(
     signing_key: &SigningKey,

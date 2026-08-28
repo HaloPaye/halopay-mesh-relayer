@@ -53,6 +53,21 @@ impl GossipNode {
     }
 
     pub async fn run(&self) {
+        // Hello broadcast background task
+        let kp_clone = self.keypair.clone();
+        let trans_clone = self.transport.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(5000)).await;
+                let payload = b"Hello";
+                let packets = build_packets(&kp_clone, MsgType::Hello, payload);
+                for p in packets {
+                    let _ = trans_clone.broadcast(&p.encode()).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                }
+            }
+        });
+
         loop {
             match self.transport.receive().await {
                 Ok((sender_id, data)) => {
@@ -63,6 +78,11 @@ impl GossipNode {
                 }
             }
         }
+    }
+
+    fn check_battery() -> u8 {
+        // Fallback: Read BATTERY_LEVEL env var or assume 100%
+        std::env::var("BATTERY_LEVEL").unwrap_or_else(|_| "100".to_string()).parse().unwrap_or(100)
     }
 
     async fn handle_raw_data(&self, sender_id: [u8; 32], data: &[u8]) {
@@ -220,9 +240,17 @@ impl GossipNode {
                     let _ = storage.insert_pending_tx(&hash_hex, &packet.payload);
                 }
 
-                // Broadcast to peers
-                let raw_encoded = packet.encode();
-                let _ = self.transport.broadcast(&raw_encoded).await;
+                // Broadcast to peers if battery >= 15 or if it's our own transaction
+                let is_own = packet.sender_pubkey == self.keypair.verifying_key().to_bytes();
+                if is_own || Self::check_battery() >= 15 {
+                    let relay_packets = crate::protocol::fragment_packet(&packet);
+                    for p in relay_packets {
+                        let _ = self.transport.broadcast(&p.encode()).await;
+                        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                    }
+                } else {
+                    self.log("BATTERY_LOW_SKIPPED_RELAY", Some(&hash_hex)).await;
+                }
             }
             MsgType::SettlementAck => {
                 self.log("ACK_RECEIVED", Some(&hash_hex)).await;
@@ -243,8 +271,11 @@ impl GossipNode {
                 }
 
                 // Relay
-                let raw_encoded = packet.encode();
-                let _ = self.transport.broadcast(&raw_encoded).await;
+                let relay_packets = crate::protocol::fragment_packet(&packet);
+                for p in relay_packets {
+                    let _ = self.transport.broadcast(&p.encode()).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                }
             }
         }
     }
