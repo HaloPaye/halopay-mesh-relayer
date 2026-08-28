@@ -13,4 +13,4 @@ pub trait Transport: Send + Sync {
 }
 
 pub mod sim;
-// pub mod ble;
+pub mod ble;
