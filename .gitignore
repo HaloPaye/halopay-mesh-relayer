@@ -2,3 +2,6 @@
 *.key
 *.db
 Cargo.lock
+
+prompt.md
+expansion_prompt.md
