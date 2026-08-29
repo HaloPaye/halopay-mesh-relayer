@@ -1,6 +1,6 @@
 use ed25519_dalek::{VerifyingKey, Signature, SigningKey};
 use std::convert::TryInto;
-use crate::crypto::{sign_message, verify_signature};
+use mesh_crypto::{sign_message, verify_signature};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -200,7 +200,7 @@ pub fn is_timestamp_valid(timestamp: u64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto::generate_keypair;
+    use mesh_crypto::generate_keypair;
     
     #[test]
     fn test_packet_encode_decode() {

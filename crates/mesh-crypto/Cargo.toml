@@ -1,0 +1,10 @@
+[package]
+name = "mesh-crypto"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ed25519-dalek = { workspace = true }
+chacha20poly1305 = { workspace = true }
+blake3 = { workspace = true }
+rand_core = { workspace = true }
