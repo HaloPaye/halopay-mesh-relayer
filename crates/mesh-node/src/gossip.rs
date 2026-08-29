@@ -1,11 +1,11 @@
+use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
+use mesh_crypto::{decrypt_payload, encrypt_payload, hash_payload, verify_signature};
+use mesh_protocol::{build_packets, is_timestamp_valid, MsgType, Packet};
+use mesh_storage::Storage;
+use mesh_transport::Transport;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use mesh_protocol::{Packet, MsgType, build_packets, is_timestamp_valid};
-use mesh_crypto::{verify_signature, hash_payload, decrypt_payload, encrypt_payload};
-use mesh_storage::Storage;
-use mesh_transport::Transport;
-use ed25519_dalek::{VerifyingKey, Signature, SigningKey};
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct TxPayload {
@@ -35,7 +35,11 @@ pub struct GossipNode {
 }
 
 impl GossipNode {
-    pub fn new(keypair: SigningKey, transport: Arc<dyn Transport>, storage: Arc<Mutex<Storage>>) -> Self {
+    pub fn new(
+        keypair: SigningKey,
+        transport: Arc<dyn Transport>,
+        storage: Arc<Mutex<Storage>>,
+    ) -> Self {
         Self {
             keypair,
             transport,
@@ -48,14 +52,29 @@ impl GossipNode {
     }
 
     pub async fn log(&self, event: &str, tx_hash: Option<&str>) {
-        let node_id = format!("{:02x}{:02x}{:02x}{:02x}", self.keypair.verifying_key().to_bytes()[0], self.keypair.verifying_key().to_bytes()[1], self.keypair.verifying_key().to_bytes()[2], self.keypair.verifying_key().to_bytes()[3]);
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        let node_id = format!(
+            "{:02x}{:02x}{:02x}{:02x}",
+            self.keypair.verifying_key().to_bytes()[0],
+            self.keypair.verifying_key().to_bytes()[1],
+            self.keypair.verifying_key().to_bytes()[2],
+            self.keypair.verifying_key().to_bytes()[3]
+        );
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         let log_msg = if let Some(h) = tx_hash {
-            format!(r#"{{"timestamp": {}, "node_id": "{}", "event": "{}", "tx_hash": "{}"}}"#, now, node_id, event, h)
+            format!(
+                r#"{{"timestamp": {}, "node_id": "{}", "event": "{}", "tx_hash": "{}"}}"#,
+                now, node_id, event, h
+            )
         } else {
-            format!(r#"{{"timestamp": {}, "node_id": "{}", "event": "{}"}}"#, now, node_id, event)
+            format!(
+                r#"{{"timestamp": {}, "node_id": "{}", "event": "{}"}}"#,
+                now, node_id, event
+            )
         };
-        
+
         if let Some(tx) = &self.tui_tx {
             let _ = tx.send(log_msg).await;
         } else {
@@ -134,7 +153,10 @@ impl GossipNode {
 
     fn check_battery() -> u8 {
         // Fallback: Read BATTERY_LEVEL env var or assume 100%
-        std::env::var("BATTERY_LEVEL").unwrap_or_else(|_| "100".to_string()).parse().unwrap_or(100)
+        std::env::var("BATTERY_LEVEL")
+            .unwrap_or_else(|_| "100".to_string())
+            .parse()
+            .unwrap_or(100)
     }
 
     async fn handle_raw_data(&self, sender_id: [u8; 32], data: &[u8]) {
@@ -155,11 +177,11 @@ impl GossipNode {
             let chunk_index = packet.payload[0];
             let total_chunks = packet.payload[1];
             let chunk_data = &packet.payload[2..];
-            
+
             let mut frags = self.fragments.lock().await;
             let sender_frags = frags.entry(sender_id).or_insert_with(HashMap::new);
             sender_frags.insert(chunk_index, chunk_data.to_vec());
-            
+
             if sender_frags.len() as u8 == total_chunks {
                 let mut reassembled = Vec::new();
                 for i in 0..total_chunks {
@@ -168,7 +190,7 @@ impl GossipNode {
                     }
                 }
                 frags.remove(&sender_id);
-                
+
                 let mut full_packet = packet.clone();
                 full_packet.payload = reassembled;
                 full_packet.payload_length = full_packet.payload.len() as u16;
@@ -192,7 +214,13 @@ impl GossipNode {
             Err(_) => return,
         };
 
-        if !verify_signature(&vk, packet.timestamp, packet.payload_length, &packet.payload, &sig) {
+        if !verify_signature(
+            &vk,
+            packet.timestamp,
+            packet.payload_length,
+            &packet.payload,
+            &sig,
+        ) {
             return;
         }
 
@@ -226,7 +254,7 @@ impl GossipNode {
                     Ok(d) => d,
                     Err(_) => return,
                 };
-                
+
                 let tx_payload: TxPayload = match serde_json::from_slice(&decrypted) {
                     Ok(p) => p,
                     Err(_) => return,
@@ -241,16 +269,22 @@ impl GossipNode {
                         let hash2 = blake3::hash(existing_sig);
                         if hash1.as_bytes() > hash2.as_bytes() {
                             // We lose
-                            self.log("DOUBLE_SPEND_DETECTED_LOST", Some(&hash_hex)).await;
-                            
+                            self.log("DOUBLE_SPEND_DETECTED_LOST", Some(&hash_hex))
+                                .await;
+
                             // Generate SettlementFailed (SettlementAck with failed status)
                             let fail_ack = AckPayload {
                                 hash: hash_hex.clone(),
                                 status: "failed".to_string(),
                             };
                             let ack_json = serde_json::to_vec(&fail_ack).unwrap();
-                            let encrypted_ack = encrypt_payload(&ack_json, packet.timestamp).unwrap();
-                            let ack_packets = build_packets(&self.keypair, MsgType::SettlementAck, &encrypted_ack);
+                            let encrypted_ack =
+                                encrypt_payload(&ack_json, packet.timestamp).unwrap();
+                            let ack_packets = build_packets(
+                                &self.keypair,
+                                MsgType::SettlementAck,
+                                &encrypted_ack,
+                            );
                             for p in ack_packets {
                                 let _ = self.transport.broadcast(&p.encode()).await;
                                 tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -273,8 +307,12 @@ impl GossipNode {
                         for p_tx in pending {
                             if let Ok(db_packet) = Packet::decode(&p_tx.payload) {
                                 if db_packet.sender_pubkey == packet.sender_pubkey {
-                                    if let Ok(dec_db) = decrypt_payload(&db_packet.payload, db_packet.timestamp) {
-                                        if let Ok(db_tx_payload) = serde_json::from_slice::<TxPayload>(&dec_db) {
+                                    if let Ok(dec_db) =
+                                        decrypt_payload(&db_packet.payload, db_packet.timestamp)
+                                    {
+                                        if let Ok(db_tx_payload) =
+                                            serde_json::from_slice::<TxPayload>(&dec_db)
+                                        {
                                             sum_usdc += db_tx_payload.amount_usdc;
                                         }
                                     }
@@ -283,7 +321,7 @@ impl GossipNode {
                         }
                     }
                 }
-                
+
                 if sum_usdc + tx_payload.amount_usdc > 500.0 {
                     self.log("OFFLINE_LIMIT_EXCEEDED", Some(&hash_hex)).await;
                     return;
@@ -291,7 +329,8 @@ impl GossipNode {
 
                 {
                     let mut storage = self.storage.lock().await;
-                    let _ = storage.insert_pending_tx(&hash_hex, &packet.encode()); // STORE FULL ENCODED PACKET
+                    let _ = storage.insert_pending_tx(&hash_hex, &packet.encode());
+                    // STORE FULL ENCODED PACKET
                 }
 
                 // Broadcast to peers if battery >= 15 or if it's our own transaction
@@ -308,12 +347,12 @@ impl GossipNode {
             }
             MsgType::SettlementAck => {
                 self.log("ACK_RECEIVED", Some(&hash_hex)).await;
-                
+
                 let decrypted = match decrypt_payload(&packet.payload, packet.timestamp) {
                     Ok(d) => d,
                     Err(_) => return,
                 };
-                
+
                 let ack_payload: AckPayload = match serde_json::from_slice(&decrypted) {
                     Ok(p) => p,
                     Err(_) => return,
@@ -336,19 +375,22 @@ impl GossipNode {
 
     pub async fn inject_transaction(&self, tx: TxPayload) -> String {
         let json = serde_json::to_vec(&tx).unwrap();
-        let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         let encrypted = encrypt_payload(&json, timestamp).unwrap();
-        
+
         let payload_hash = hash_payload(&encrypted);
         let hash = payload_hash.to_hex().as_str().to_string();
         self.log("TX_INJECTED", Some(&hash)).await;
-        
+
         let packets = build_packets(&self.keypair, MsgType::TxGossip, &encrypted);
         for p in packets {
             // Process it locally first
-            self.handle_raw_data(self.keypair.verifying_key().to_bytes(), &p.encode()).await;
+            self.handle_raw_data(self.keypair.verifying_key().to_bytes(), &p.encode())
+                .await;
         }
         hash
     }
 }
-

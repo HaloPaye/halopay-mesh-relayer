@@ -1,7 +1,7 @@
 use super::{Transport, TransportError};
 use async_trait::async_trait;
-use tokio::sync::broadcast;
 use std::sync::Arc;
+use tokio::sync::broadcast;
 
 pub struct SimTransport {
     pub node_id: [u8; 32],
@@ -20,11 +20,11 @@ impl SimTransport {
             connected_peers: Arc::new(std::sync::RwLock::new(std::collections::HashSet::new())),
         }
     }
-    
+
     pub fn connect_to(&self, peer_id: [u8; 32]) {
         self.connected_peers.write().unwrap().insert(peer_id);
     }
-    
+
     pub fn disconnect_from(&self, peer_id: [u8; 32]) {
         self.connected_peers.write().unwrap().remove(&peer_id);
     }
@@ -46,7 +46,7 @@ impl Transport for SimTransport {
                         let _is_connected = {
                             let peers = self.connected_peers.read().unwrap();
                             peers.is_empty() || peers.contains(&sender_id) // if empty, assume fully connected for convenience, or strictly check. Let's strictly check.
-                            // Actually, wait, let's make it so if we use `connected_peers`, we only receive from them.
+                                                                           // Actually, wait, let's make it so if we use `connected_peers`, we only receive from them.
                         };
                         // To make it fully connected by default, let's just say if connected_peers is populated we use it. But it's easier if we explicitly connect.
                         // Let's assume connected if it's in the set.
