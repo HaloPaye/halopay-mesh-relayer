@@ -1,0 +1,23 @@
+[Unit]
+Description=HaloPay Mesh Relayer Daemon
+After=network.target bluetooth.target
+Wants=bluetooth.target
+
+[Service]
+Type=simple
+User=halopay
+Group=halopay
+Environment="API_URL=https://api.halopay.app"
+Environment="TRANSPORT_MODE=ble"
+Environment="MESH_NETWORK_ID=0x00000000"
+ExecStart=/usr/local/bin/halopay-mesh-relayer
+Restart=always
+RestartSec=5
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/halopay/.halopay
+
+[Install]
+WantedBy=multi-user.target

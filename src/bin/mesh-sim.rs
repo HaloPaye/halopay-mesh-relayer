@@ -2,19 +2,14 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
 use tokio::net::TcpListener;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-#[path = "../crypto.rs"] pub mod crypto;
-#[path = "../protocol.rs"] pub mod protocol;
-#[path = "../storage.rs"] pub mod storage;
-#[path = "../transport/mod.rs"] pub mod transport;
-#[path = "../gossip.rs"] pub mod gossip;
-#[path = "../settlement.rs"] pub mod settlement;
-
-use crypto::generate_keypair;
-use storage::Storage;
-use transport::sim::SimTransport;
-use gossip::{GossipNode, TxPayload};
-use settlement::SettlementClient;
+use mesh_crypto::generate_keypair;
+use mesh_storage::Storage;
+use mesh_transport::sim::SimTransport;
+use mesh_transport::Transport;
+use mesh_node::gossip::{GossipNode, TxPayload};
+use mesh_node::settlement::SettlementClient;
+use mesh_tui::run_tui;
+use tokio::sync::mpsc;
 
 async fn run_mock_api() {
     let listener = TcpListener::bind("127.0.0.1:8080").await.unwrap();
@@ -36,8 +31,8 @@ async fn run_mock_api() {
                                 for p in payloads {
                                     if let Some(s) = p.as_str() {
                                         use base64::{Engine as _, engine::general_purpose};
-                                        if let Ok(decoded) = general_purpose::STANDARD.decode(s) {
-                                            let h = crypto::hash_payload(&decoded);
+                                        if let Ok(decoded) = general_purpose::STANDARD.decode::<&str>(s) {
+                                            let h = mesh_crypto::hash_payload(&decoded);
                                             settled.push(h.to_hex().as_str().to_string());
                                         }
                                     }
@@ -92,9 +87,20 @@ async fn main() {
     let store_c = Arc::new(Mutex::new(Storage::new(":memory:").unwrap()));
     let store_d = Arc::new(Mutex::new(Storage::new(":memory:").unwrap()));
 
-    let node_a = Arc::new(GossipNode::new(key_a, trans_a.clone(), store_a.clone()));
-    let node_b = Arc::new(GossipNode::new(key_b, trans_b.clone(), store_b.clone()));
-    let node_c = Arc::new(GossipNode::new(key_c.clone(), trans_c.clone(), store_c.clone()));
+    let (tui_tx, tui_rx) = mpsc::channel(100);
+
+    let mut node_a = GossipNode::new(key_a.clone(), trans_a.clone(), store_a.clone());
+    node_a.tui_tx = Some(tui_tx.clone());
+    let node_a = Arc::new(node_a);
+    let mut node_b = GossipNode::new(key_b, trans_b.clone(), store_b.clone());
+    node_b.tui_tx = Some(tui_tx.clone());
+    let node_b = Arc::new(node_b);
+    let mut node_c = GossipNode::new(key_c.clone(), trans_c.clone(), store_c.clone());
+    node_c.tui_tx = Some(tui_tx.clone());
+    let node_c = Arc::new(node_c);
+    let mut node_d = GossipNode::new(key_d.clone(), trans_d.clone(), store_d.clone());
+    node_d.tui_tx = Some(tui_tx.clone());
+    let node_d = Arc::new(node_d);
 
     let na = node_a.clone();
     tokio::spawn(async move { na.run().await; });
@@ -102,10 +108,18 @@ async fn main() {
     tokio::spawn(async move { nb.run().await; });
     let nc = node_c.clone();
     tokio::spawn(async move { nc.run().await; });
+    let nd = node_d.clone();
+    tokio::spawn(async move { nd.run().await; });
 
-    let settle_c = Arc::new(SettlementClient::new(store_c.clone(), trans_c.clone(), key_c));
-    let sc = settle_c.clone();
-    tokio::spawn(async move { sc.run().await; });
+    let mut settle_c = SettlementClient::new(store_c.clone(), trans_c.clone(), key_c);
+    settle_c.tui_tx = Some(tui_tx.clone());
+    let sc = Arc::new(settle_c);
+    let sc_clone = sc.clone();
+    tokio::spawn(async move { sc_clone.run().await; });
+
+    tokio::spawn(async move {
+        let _ = run_tui(tui_rx).await;
+    });
 
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
@@ -150,14 +164,13 @@ async fn main() {
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     
     // 4. Injected Duplicates
-    println!("--- SCENARIO 4: Injected Duplicates ---");
     let tx4 = TxPayload { nonce: 4, amount_usdc: 20.0 };
     let json = serde_json::to_vec(&tx4).unwrap();
-    let encrypted = crypto::encrypt_payload(&json, 12345).unwrap();
-    let packets_a = protocol::build_packets(&key_a, protocol::MsgType::TxGossip, &encrypted);
+    let encrypted = mesh_crypto::encrypt_payload(&json, 12345).unwrap();
+    let packets_a = mesh_protocol::build_packets(&key_a, mesh_protocol::MsgType::TxGossip, &encrypted);
     
     // D injects exact same payload at same time
-    let packets_d = protocol::build_packets(&key_a, protocol::MsgType::TxGossip, &encrypted); // Wait, D would sign with their own key, or same tx? "A and D inject the exact same transaction hash simultaneously." A transaction hash is blake3(packet.payload). If it's the exact same transaction hash, they must be identical payloads. Let's just broadcast identical packets.
+    let packets_d = mesh_protocol::build_packets(&key_a, mesh_protocol::MsgType::TxGossip, &encrypted); 
     for p in &packets_a {
         let _ = trans_a.broadcast(&p.encode()).await;
     }
@@ -167,7 +180,6 @@ async fn main() {
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     
     // 5. Malicious Payload
-    println!("--- SCENARIO 5: Malicious Payload ---");
     let mut bad_packet = packets_a[0].clone();
     bad_packet.signature[0] ^= 0xFF; // flip bits
     let _ = trans_a.broadcast(&bad_packet.encode()).await;

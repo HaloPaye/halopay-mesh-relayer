@@ -5,11 +5,11 @@ use std::env;
 use std::time::Duration;
 use base64::{Engine as _, engine::general_purpose};
 
-use crate::storage::Storage;
-use crate::transport::Transport;
-use crate::protocol::{MsgType, build_packets};
+use mesh_storage::Storage;
+use mesh_transport::Transport;
+use mesh_protocol::{MsgType, build_packets};
 use crate::gossip::{AckPayload};
-use crate::crypto::{encrypt_payload};
+use mesh_crypto::{encrypt_payload};
 use ed25519_dalek::SigningKey;
 
 #[derive(serde::Serialize)]
@@ -29,6 +29,7 @@ pub struct SettlementClient {
     keypair: SigningKey,
     api_url: String,
     client: Client,
+    pub tui_tx: Option<tokio::sync::mpsc::Sender<String>>,
 }
 
 impl SettlementClient {
@@ -44,6 +45,7 @@ impl SettlementClient {
             keypair,
             api_url,
             client: Client::builder().timeout(Duration::from_secs(10)).build().unwrap(),
+            tui_tx: None,
         }
     }
 
@@ -52,20 +54,14 @@ impl SettlementClient {
         let settle_url = format!("{}/settle", self.api_url);
 
         loop {
-            // "every 60 seconds"
             tokio::time::sleep(Duration::from_secs(60)).await;
             
-            // Checking connectivity
             let res = self.client.get(&ping_url).send().await;
             match res {
                 Ok(resp) if resp.status().is_success() => {
                     self.process_settlement(&settle_url).await;
                 }
-                _ => {
-                    // Log API Error? 
-                    // Protocol says: If API unreachable / 500 error: If /settle fails, hold the transactions locally in pending state, log {"event": "API_ERROR", "action": "RETRY_IN_60S"}, and wait.
-                    // If ping fails we just wait.
-                }
+                _ => {}
             }
         }
     }
@@ -96,23 +92,23 @@ impl SettlementClient {
                 if let Ok(parsed) = resp.json::<SettleResponse>().await {
                     let mut storage = self.storage.lock().await;
                     
-                    // Process settled
                     for hash in parsed.settled {
                         let _ = storage.update_status(&hash, "settled");
                         self.log_and_gossip_ack(&hash, "settled").await;
                     }
                     
-                    // Process rejected
                     for hash in parsed.rejected {
                         let _ = storage.update_status(&hash, "failed");
                         self.log_and_gossip_ack(&hash, "failed").await;
                     }
                 } else {
-                    println!(r#"{{"event": "API_ERROR", "action": "RETRY_IN_60S"}}"#);
+                    let msg = r#"{{"event": "API_ERROR", "action": "RETRY_IN_60S"}}"#.to_string();
+                    if let Some(tx) = &self.tui_tx { let _ = tx.send(msg).await; } else { println!("{}", msg); }
                 }
             }
             _ => {
-                println!(r#"{{"event": "API_ERROR", "action": "RETRY_IN_60S"}}"#);
+                let msg = r#"{{"event": "API_ERROR", "action": "RETRY_IN_60S"}}"#.to_string();
+                if let Some(tx) = &self.tui_tx { let _ = tx.send(msg).await; } else { println!("{}", msg); }
             }
         }
     }
@@ -121,10 +117,16 @@ impl SettlementClient {
         let node_id = format!("{:02x}{:02x}{:02x}{:02x}", self.keypair.verifying_key().to_bytes()[0], self.keypair.verifying_key().to_bytes()[1], self.keypair.verifying_key().to_bytes()[2], self.keypair.verifying_key().to_bytes()[3]);
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
         
-        if status == "settled" {
-            println!(r#"{{"timestamp": {}, "node_id": "{}", "event": "API_SUBMIT_SUCCESS", "tx_hash": "{}"}}"#, now, node_id, hash);
+        let msg = if status == "settled" {
+            format!(r#"{{"timestamp": {}, "node_id": "{}", "event": "API_SUBMIT_SUCCESS", "tx_hash": "{}"}}"#, now, node_id, hash)
         } else {
-            println!(r#"{{"timestamp": {}, "node_id": "{}", "event": "API_SUBMIT_FAILED", "tx_hash": "{}"}}"#, now, node_id, hash);
+            format!(r#"{{"timestamp": {}, "node_id": "{}", "event": "API_SUBMIT_FAILED", "tx_hash": "{}"}}"#, now, node_id, hash)
+        };
+        
+        if let Some(tx) = &self.tui_tx {
+            let _ = tx.send(msg).await;
+        } else {
+            println!("{}", msg);
         }
 
         let ack = AckPayload {

@@ -6,23 +6,13 @@ use ed25519_dalek::{SigningKey};
 use rand_core::OsRng;
 use std::fs;
 
-pub mod crypto;
-pub mod protocol;
-pub mod transport;
-pub mod storage;
-pub mod gossip;
-pub mod settlement;
-
-#[cfg(test)]
-mod tests;
-
-use storage::Storage;
-use transport::sim::SimTransport;
-use transport::Transport;
+use mesh_storage::Storage;
+use mesh_transport::sim::SimTransport;
+use mesh_transport::Transport;
 #[cfg(feature = "hardware")]
-use transport::ble::BleTransport;
-use gossip::GossipNode;
-use settlement::SettlementClient;
+use mesh_transport::ble::BleTransport;
+use mesh_node::gossip::GossipNode;
+use mesh_node::settlement::SettlementClient;
 
 fn get_halopay_dir() -> PathBuf {
     let home = std::env::var("HOME")
