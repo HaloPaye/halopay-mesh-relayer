@@ -1,23 +1,48 @@
-[package]
-name = "halopay-mesh-relayer"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+members = [
+    "crates/mesh-crypto",
+    "crates/mesh-protocol",
+    "crates/mesh-storage",
+    "crates/mesh-transport",
+    "crates/mesh-node",
+    "crates/mesh-tui"
+]
+resolver = "2"
 
-[dependencies]
+[workspace.dependencies]
 tokio = { version = "1.34", features = ["full"] }
 ed25519-dalek = { version = "2.0", features = ["rand_core"] }
 chacha20poly1305 = "0.10"
 blake3 = "1.5"
 rusqlite = { version = "0.30", features = ["bundled"] }
 reqwest = { version = "0.11", features = ["json"] }
-async-trait = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-base64 = "0.21"
+hex = "0.4"
+btleplug = "0.11"
 rand_core = { version = "0.6", features = ["std"] }
+base64 = "0.21"
+ratatui = "0.26"
+crossterm = "0.27"
 
-[target.'cfg(target_os = "linux")'.dependencies]
-btleplug = { version = "0.11", optional = true }
+[package]
+name = "halopay-mesh-relayer"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+mesh-crypto = { path = "crates/mesh-crypto" }
+mesh-protocol = { path = "crates/mesh-protocol" }
+mesh-storage = { path = "crates/mesh-storage" }
+mesh-transport = { path = "crates/mesh-transport" }
+mesh-node = { path = "crates/mesh-node" }
+mesh-tui = { path = "crates/mesh-tui" }
+tokio = { workspace = true }
+ed25519-dalek = { workspace = true }
+rand_core = { workspace = true }
+serde_json = { workspace = true }
+base64 = { workspace = true }
 
 [features]
-hardware = ["btleplug"]
+hardware = ["mesh-transport/hardware"]

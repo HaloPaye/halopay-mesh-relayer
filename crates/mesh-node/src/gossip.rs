@@ -1,10 +1,10 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use crate::protocol::{Packet, MsgType, build_packets, is_timestamp_valid};
-use crate::crypto::{verify_signature, hash_payload, decrypt_payload, encrypt_payload};
-use crate::storage::Storage;
-use crate::transport::Transport;
+use mesh_protocol::{Packet, MsgType, build_packets, is_timestamp_valid};
+use mesh_crypto::{verify_signature, hash_payload, decrypt_payload, encrypt_payload};
+use mesh_storage::Storage;
+use mesh_transport::Transport;
 use ed25519_dalek::{VerifyingKey, Signature, SigningKey};
 use blake3::Hash;
 
@@ -20,6 +20,8 @@ pub struct AckPayload {
     pub status: String,
 }
 
+use tokio::sync::mpsc;
+
 pub struct GossipNode {
     pub keypair: SigningKey,
     pub transport: Arc<dyn Transport>,
@@ -27,6 +29,7 @@ pub struct GossipNode {
     pub lru_cache: Mutex<VecDeque<String>>,
     pub double_spend_cache: Mutex<HashMap<([u8; 32], u64), [u8; 64]>>,
     pub fragments: Mutex<HashMap<[u8; 32], HashMap<u8, Vec<u8>>>>, // Sender -> ChunkIndex -> Data
+    pub tui_tx: Option<mpsc::Sender<String>>,
 }
 
 impl GossipNode {
@@ -38,17 +41,23 @@ impl GossipNode {
             lru_cache: Mutex::new(VecDeque::with_capacity(10000)),
             double_spend_cache: Mutex::new(HashMap::new()),
             fragments: Mutex::new(HashMap::new()),
+            tui_tx: None,
         }
     }
 
     pub async fn log(&self, event: &str, tx_hash: Option<&str>) {
-        let pubkey_bytes = self.keypair.verifying_key().to_bytes();
-        let node_id = format!("{:02x}{:02x}{:02x}{:02x}", pubkey_bytes[0], pubkey_bytes[1], pubkey_bytes[2], pubkey_bytes[3]);
+        let node_id = format!("{:02x}{:02x}{:02x}{:02x}", self.keypair.verifying_key().to_bytes()[0], self.keypair.verifying_key().to_bytes()[1], self.keypair.verifying_key().to_bytes()[2], self.keypair.verifying_key().to_bytes()[3]);
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-        if let Some(h) = tx_hash {
-            println!(r#"{{"timestamp": {}, "node_id": "{}", "event": "{}", "tx_hash": "{}"}}"#, now, node_id, event, h);
+        let log_msg = if let Some(h) = tx_hash {
+            format!(r#"{{"timestamp": {}, "node_id": "{}", "event": "{}", "tx_hash": "{}"}}"#, now, node_id, event, h)
         } else {
-            println!(r#"{{"timestamp": {}, "node_id": "{}", "event": "{}"}}"#, now, node_id, event);
+            format!(r#"{{"timestamp": {}, "node_id": "{}", "event": "{}"}}"#, now, node_id, event)
+        };
+        
+        if let Some(tx) = &self.tui_tx {
+            let _ = tx.send(log_msg).await;
+        } else {
+            println!("{}", log_msg);
         }
     }
 
@@ -59,7 +68,7 @@ impl GossipNode {
             if let Ok(pending) = storage.get_pending_txs() {
                 for tx_record in pending {
                     if let Ok(packet) = Packet::decode(&tx_record.payload) {
-                        let relay_packets = crate::protocol::fragment_packet(&packet);
+                        let relay_packets = mesh_protocol::fragment_packet(&packet);
                         let trans_clone = self.transport.clone();
                         tokio::spawn(async move {
                             for p in relay_packets {
@@ -87,9 +96,31 @@ impl GossipNode {
             }
         });
 
+        // TUI Stats background task
+        let storage_clone = self.storage.clone();
+        let trans_clone_tui = self.transport.clone();
+        let tui_tx_clone = self.tui_tx.clone();
+        if let Some(tui_tx) = tui_tx_clone {
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    let storage = storage_clone.lock().await;
+                    if let Ok(pending) = storage.get_pending_txs() {
+                        let _ = tui_tx.send(format!("MEMPOOL:{}", pending.len())).await;
+                    }
+                    // For active peers, transport traits would need it, but we can fake it or ignore since TUI just wants some visualization.
+                    // Gossip logs themselves will populate the peers list.
+                }
+            });
+        }
+
         loop {
             match self.transport.receive().await {
                 Ok((sender_id, data)) => {
+                    if let Some(tx) = &self.tui_tx {
+                        let sender_hex = hex::encode(&sender_id[0..4]);
+                        let _ = tx.send(format!("PEER:{}", sender_hex)).await;
+                    }
                     self.handle_raw_data(sender_id, &data).await;
                 }
                 Err(_) => {
@@ -264,7 +295,7 @@ impl GossipNode {
                 // Broadcast to peers if battery >= 15 or if it's our own transaction
                 let is_own = packet.sender_pubkey == self.keypair.verifying_key().to_bytes();
                 if is_own || Self::check_battery() >= 15 {
-                    let relay_packets = crate::protocol::fragment_packet(&packet);
+                    let relay_packets = mesh_protocol::fragment_packet(&packet);
                     for p in relay_packets {
                         let _ = self.transport.broadcast(&p.encode()).await;
                         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -292,7 +323,7 @@ impl GossipNode {
                 }
 
                 // Relay
-                let relay_packets = crate::protocol::fragment_packet(&packet);
+                let relay_packets = mesh_protocol::fragment_packet(&packet);
                 for p in relay_packets {
                     let _ = self.transport.broadcast(&p.encode()).await;
                     tokio::time::sleep(std::time::Duration::from_millis(50)).await;

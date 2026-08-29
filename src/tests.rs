@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use crate::crypto::{generate_keypair, encrypt_payload, sign_message, verify_signature, hash_payload};
-    use crate::protocol::{build_packets, Packet, MsgType};
+    use mesh_crypto::{generate_keypair, encrypt_payload, sign_message, verify_signature, hash_payload};
+    use mesh_protocol::{build_packets, Packet, MsgType};
     use ed25519_dalek::Signer;
 
     #[test]

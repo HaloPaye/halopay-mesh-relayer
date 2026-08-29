@@ -1,0 +1,12 @@
+[package]
+name = "mesh-transport"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { workspace = true }
+btleplug = { workspace = true, optional = true }
+async-trait = "0.1"
+
+[features]
+hardware = ["btleplug"]
