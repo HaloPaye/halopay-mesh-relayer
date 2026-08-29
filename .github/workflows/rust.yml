@@ -1,4 +1,4 @@
-name: Rust CI
+name: Rust Enterprise CI
 
 on:
   push:
@@ -10,11 +10,19 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build_and_test:
+  formatting:
+    name: Code Formatting
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    
+    - name: Check Formatting
+      run: cargo fmt --check
+
+  lints:
+    name: Code Lints (Clippy)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
     - name: Cache dependencies
       uses: actions/cache@v3
       with:
@@ -23,12 +31,53 @@ jobs:
           ~/.cargo/git
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-    
-    - name: Check Formatting
-      run: cargo fmt --check
-      
     - name: Clippy Lints
-      run: cargo clippy --workspace -- -D warnings
-      
+      run: cargo clippy --workspace --all-targets -- -D warnings
+
+  tests:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - name: Run Tests
       run: cargo test --workspace
+
+  build_release:
+    name: Release Build
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+    - name: Build Release
+      run: cargo build --workspace --release
+
+  docs:
+    name: Documentation Verification
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    - name: Build Docs
+      run: cargo doc --workspace --no-deps --document-private-items
