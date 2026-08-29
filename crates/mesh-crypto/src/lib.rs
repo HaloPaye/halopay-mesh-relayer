@@ -3,7 +3,7 @@ use chacha20poly1305::{
     aead::{Aead, KeyInit},
     ChaCha20Poly1305, Key, Nonce,
 };
-use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey, Signature};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand_core::OsRng;
 use std::env;
 
@@ -60,11 +60,11 @@ fn get_network_key() -> Key {
 pub fn encrypt_payload(payload: &[u8], timestamp: u64) -> Result<Vec<u8>, String> {
     let key = get_network_key();
     let cipher = ChaCha20Poly1305::new(&key);
-    
+
     let mut nonce_bytes = [0u8; 12];
     nonce_bytes[0..8].copy_from_slice(&timestamp.to_le_bytes());
     let nonce = Nonce::from_slice(&nonce_bytes);
-    
+
     cipher.encrypt(nonce, payload).map_err(|e| e.to_string())
 }
 
@@ -72,31 +72,42 @@ pub fn encrypt_payload(payload: &[u8], timestamp: u64) -> Result<Vec<u8>, String
 pub fn decrypt_payload(ciphertext: &[u8], timestamp: u64) -> Result<Vec<u8>, String> {
     let key = get_network_key();
     let cipher = ChaCha20Poly1305::new(&key);
-    
+
     let mut nonce_bytes = [0u8; 12];
     nonce_bytes[0..8].copy_from_slice(&timestamp.to_le_bytes());
     let nonce = Nonce::from_slice(&nonce_bytes);
-    
+
     cipher.decrypt(nonce, ciphertext).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ed25519_dalek::VerifyingKey;
-    
+
     #[test]
     fn test_signature_verify() {
         let kp = generate_keypair();
         let payload = b"test payload";
         let sig = sign_message(&kp, 12345, payload.len() as u16, payload);
-        assert!(verify_signature(&kp.verifying_key(), 12345, payload.len() as u16, payload, &sig));
-        
+        assert!(verify_signature(
+            &kp.verifying_key(),
+            12345,
+            payload.len() as u16,
+            payload,
+            &sig
+        ));
+
         // Tampered payload
         let tampered = b"test payloae";
-        assert!(!verify_signature(&kp.verifying_key(), 12345, tampered.len() as u16, tampered, &sig));
+        assert!(!verify_signature(
+            &kp.verifying_key(),
+            12345,
+            tampered.len() as u16,
+            tampered,
+            &sig
+        ));
     }
-    
+
     #[test]
     fn test_encrypt_decrypt() {
         let payload = b"secret message";
@@ -106,4 +117,3 @@ mod tests {
         assert_eq!(payload, decrypted.as_slice());
     }
 }
-

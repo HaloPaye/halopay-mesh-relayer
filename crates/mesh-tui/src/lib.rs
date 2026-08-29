@@ -51,19 +51,23 @@ pub async fn run_tui(mut rx: mpsc::Receiver<String>) -> Result<(), io::Error> {
                 .iter()
                 .map(|p| ListItem::new(p.as_str()))
                 .collect();
-            let peers_list = List::new(peers).block(Block::default().borders(Borders::ALL).title("Active Peers"));
+            let peers_list = List::new(peers)
+                .block(Block::default().borders(Borders::ALL).title("Active Peers"));
             f.render_widget(peers_list, chunks[0]);
 
-            let logs: Vec<ListItem> = app
-                .logs
-                .iter()
-                .map(|l| ListItem::new(l.as_str()))
-                .collect();
-            let logs_list = List::new(logs).block(Block::default().borders(Borders::ALL).title("Gossip & Settlement Logs"));
+            let logs: Vec<ListItem> = app.logs.iter().map(|l| ListItem::new(l.as_str())).collect();
+            let logs_list = List::new(logs).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Gossip & Settlement Logs"),
+            );
             f.render_widget(logs_list, chunks[1]);
 
-            let mempool = Paragraph::new(format!("Mempool Size: {}", app.mempool_size))
-                .block(Block::default().borders(Borders::ALL).title("SQLite Mempool"));
+            let mempool = Paragraph::new(format!("Mempool Size: {}", app.mempool_size)).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("SQLite Mempool"),
+            );
             f.render_widget(mempool, chunks[2]);
         })?;
 

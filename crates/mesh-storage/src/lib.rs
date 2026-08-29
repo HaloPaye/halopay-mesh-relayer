@@ -1,4 +1,4 @@
-use rusqlite::{Connection, Result, params};
+use rusqlite::{params, Connection, Result};
 use std::path::Path;
 
 #[derive(Debug)]
@@ -34,13 +34,13 @@ impl Storage {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
-        
+
         tx.execute(
             "INSERT OR IGNORE INTO txs (hash, payload, status, added_at) VALUES (?1, ?2, 'pending', ?3)",
             params![hash, payload, now],
         )?;
         tx.commit()?;
-        
+
         self.enforce_size_limit()?;
         Ok(())
     }
@@ -56,7 +56,9 @@ impl Storage {
     }
 
     pub fn get_pending_txs(&self) -> Result<Vec<TxRecord>> {
-        let mut stmt = self.conn.prepare("SELECT hash, payload, status, added_at FROM txs WHERE status = 'pending'")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT hash, payload, status, added_at FROM txs WHERE status = 'pending'")?;
         let rows = stmt.query_map([], |row| {
             Ok(TxRecord {
                 hash: row.get(0)?,
@@ -78,15 +80,15 @@ impl Storage {
             let mut stmt = self.conn.prepare("PRAGMA page_count")?;
             stmt.query_row([], |row| row.get(0))?
         };
-        
+
         let page_size: i64 = {
             let mut stmt2 = self.conn.prepare("PRAGMA page_size")?;
             stmt2.query_row([], |row| row.get(0))?
         };
-        
+
         let size_bytes = page_count * page_size;
         let max_size = 50 * 1024 * 1024; // 50MB
-        
+
         if size_bytes > max_size {
             // Delete oldest settled
             let tx = self.conn.transaction()?;
@@ -109,13 +111,15 @@ mod tests {
     #[test]
     fn test_sqlite_schema_creation() {
         let mut storage = Storage::new(":memory:").unwrap();
-        storage.insert_pending_tx("abc123hash", b"test payload").unwrap();
-        
+        storage
+            .insert_pending_tx("abc123hash", b"test payload")
+            .unwrap();
+
         let pending = storage.get_pending_txs().unwrap();
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].hash, "abc123hash");
         assert_eq!(pending[0].status, "pending");
-        
+
         storage.update_status("abc123hash", "settled").unwrap();
         let pending_after = storage.get_pending_txs().unwrap();
         assert_eq!(pending_after.len(), 0);

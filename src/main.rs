@@ -1,21 +1,21 @@
+use ed25519_dalek::SigningKey;
+use rand_core::OsRng;
+use std::env;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use std::env;
-use std::path::PathBuf;
-use ed25519_dalek::{SigningKey};
-use rand_core::OsRng;
-use std::fs;
 
 #[cfg(test)]
 mod tests;
 
-use mesh_storage::Storage;
-use mesh_transport::sim::SimTransport;
-use mesh_transport::Transport;
-#[cfg(feature = "hardware")]
-use mesh_transport::ble::BleTransport;
 use mesh_node::gossip::GossipNode;
 use mesh_node::settlement::SettlementClient;
+use mesh_storage::Storage;
+#[cfg(feature = "hardware")]
+use mesh_transport::ble::BleTransport;
+use mesh_transport::sim::SimTransport;
+use mesh_transport::Transport;
 
 fn get_halopay_dir() -> PathBuf {
     let home = std::env::var("HOME")
@@ -53,9 +53,9 @@ async fn main() {
 
     let keypair = load_or_generate_key();
     let db_path = get_halopay_dir().join("mesh.db");
-    
+
     let storage = Arc::new(Mutex::new(Storage::new(&db_path).unwrap()));
-    
+
     let transport: Arc<dyn Transport> = if transport_mode == "ble" {
         #[cfg(feature = "hardware")]
         {
@@ -70,9 +70,13 @@ async fn main() {
         Arc::new(SimTransport::new(keypair.verifying_key().to_bytes(), tx))
     };
 
-    let node = Arc::new(GossipNode::new(keypair.clone(), transport.clone(), storage.clone()));
+    let node = Arc::new(GossipNode::new(
+        keypair.clone(),
+        transport.clone(),
+        storage.clone(),
+    ));
     let node_clone = node.clone();
-    
+
     tokio::spawn(async move {
         node_clone.run().await;
     });
