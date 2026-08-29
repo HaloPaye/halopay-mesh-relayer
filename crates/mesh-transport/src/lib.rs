@@ -12,5 +12,5 @@ pub trait Transport: Send + Sync {
     async fn receive(&self) -> Result<([u8; 32], Vec<u8>), TransportError>;
 }
 
-pub mod sim;
 pub mod ble;
+pub mod sim;

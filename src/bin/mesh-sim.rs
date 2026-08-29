@@ -1,15 +1,15 @@
-use std::sync::Arc;
-use tokio::sync::{broadcast, Mutex};
-use tokio::net::TcpListener;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use mesh_crypto::generate_keypair;
+use mesh_node::gossip::{GossipNode, TxPayload};
+use mesh_node::settlement::SettlementClient;
 use mesh_storage::Storage;
 use mesh_transport::sim::SimTransport;
 use mesh_transport::Transport;
-use mesh_node::gossip::{GossipNode, TxPayload};
-use mesh_node::settlement::SettlementClient;
 use mesh_tui::run_tui;
+use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 use tokio::sync::mpsc;
+use tokio::sync::{broadcast, Mutex};
 
 async fn run_mock_api() {
     let listener = TcpListener::bind("127.0.0.1:8080").await.unwrap();
@@ -18,7 +18,9 @@ async fn run_mock_api() {
         tokio::spawn(async move {
             let mut buf = [0; 4096];
             if let Ok(n) = socket.read(&mut buf).await {
-                if n == 0 { return; }
+                if n == 0 {
+                    return;
+                }
                 let req = String::from_utf8_lossy(&buf[..n]);
                 if req.contains("GET /ping") {
                     socket.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await.unwrap();
@@ -26,12 +28,16 @@ async fn run_mock_api() {
                     if let Some(body_start) = req.find("\r\n\r\n") {
                         let body = &req[body_start + 4..];
                         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(body) {
-                            if let Some(payloads) = parsed.get("payloads").and_then(|p| p.as_array()) {
+                            if let Some(payloads) =
+                                parsed.get("payloads").and_then(|p| p.as_array())
+                            {
                                 let mut settled = Vec::new();
                                 for p in payloads {
                                     if let Some(s) = p.as_str() {
-                                        use base64::{Engine as _, engine::general_purpose};
-                                        if let Ok(decoded) = general_purpose::STANDARD.decode::<&str>(s) {
+                                        use base64::{engine::general_purpose, Engine as _};
+                                        if let Ok(decoded) =
+                                            general_purpose::STANDARD.decode::<&str>(s)
+                                        {
                                             let h = mesh_crypto::hash_payload(&decoded);
                                             settled.push(h.to_hex().as_str().to_string());
                                         }
@@ -103,19 +109,29 @@ async fn main() {
     let node_d = Arc::new(node_d);
 
     let na = node_a.clone();
-    tokio::spawn(async move { na.run().await; });
+    tokio::spawn(async move {
+        na.run().await;
+    });
     let nb = node_b.clone();
-    tokio::spawn(async move { nb.run().await; });
+    tokio::spawn(async move {
+        nb.run().await;
+    });
     let nc = node_c.clone();
-    tokio::spawn(async move { nc.run().await; });
+    tokio::spawn(async move {
+        nc.run().await;
+    });
     let nd = node_d.clone();
-    tokio::spawn(async move { nd.run().await; });
+    tokio::spawn(async move {
+        nd.run().await;
+    });
 
     let mut settle_c = SettlementClient::new(store_c.clone(), trans_c.clone(), key_c);
     settle_c.tui_tx = Some(tui_tx.clone());
     let sc = Arc::new(settle_c);
     let sc_clone = sc.clone();
-    tokio::spawn(async move { sc_clone.run().await; });
+    tokio::spawn(async move {
+        sc_clone.run().await;
+    });
 
     tokio::spawn(async move {
         let _ = run_tui(tui_rx).await;
@@ -125,11 +141,16 @@ async fn main() {
 
     // 1. Relaying: A sends to B. B relays to C. C submits to API.
     println!("--- SCENARIO 1: Relaying ---");
-    node_a.inject_transaction(TxPayload { nonce: 1, amount_usdc: 10.0 }).await;
-    
+    node_a
+        .inject_transaction(TxPayload {
+            nonce: 1,
+            amount_usdc: 10.0,
+        })
+        .await;
+
     tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
     sc.process_settlement("http://127.0.0.1:8080/settle").await;
-    
+
     // Allow Acks to propagate back
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
@@ -138,9 +159,14 @@ async fn main() {
     trans_a.disconnect_from(id_c);
     trans_b.disconnect_from(id_c);
     trans_c.disconnect_from(id_b);
-    node_a.inject_transaction(TxPayload { nonce: 2, amount_usdc: 15.0 }).await;
+    node_a
+        .inject_transaction(TxPayload {
+            nonce: 2,
+            amount_usdc: 15.0,
+        })
+        .await;
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    
+
     // Heal
     trans_b.connect_to(id_c);
     trans_c.connect_to(id_b);
@@ -155,22 +181,32 @@ async fn main() {
     }
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     sc.process_settlement("http://127.0.0.1:8080/settle").await;
-    
+
     // 3. Disappearance
     println!("--- SCENARIO 3: Disappearance ---");
     trans_a.disconnect_from(id_b); // B dies
     trans_c.disconnect_from(id_b); // B dies
-    node_a.inject_transaction(TxPayload { nonce: 3, amount_usdc: 20.0 }).await;
+    node_a
+        .inject_transaction(TxPayload {
+            nonce: 3,
+            amount_usdc: 20.0,
+        })
+        .await;
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    
+
     // 4. Injected Duplicates
-    let tx4 = TxPayload { nonce: 4, amount_usdc: 20.0 };
+    let tx4 = TxPayload {
+        nonce: 4,
+        amount_usdc: 20.0,
+    };
     let json = serde_json::to_vec(&tx4).unwrap();
     let encrypted = mesh_crypto::encrypt_payload(&json, 12345).unwrap();
-    let packets_a = mesh_protocol::build_packets(&key_a, mesh_protocol::MsgType::TxGossip, &encrypted);
-    
+    let packets_a =
+        mesh_protocol::build_packets(&key_a, mesh_protocol::MsgType::TxGossip, &encrypted);
+
     // D injects exact same payload at same time
-    let packets_d = mesh_protocol::build_packets(&key_a, mesh_protocol::MsgType::TxGossip, &encrypted); 
+    let packets_d =
+        mesh_protocol::build_packets(&key_a, mesh_protocol::MsgType::TxGossip, &encrypted);
     for p in &packets_a {
         let _ = trans_a.broadcast(&p.encode()).await;
     }
@@ -178,7 +214,7 @@ async fn main() {
         let _ = trans_d.broadcast(&p.encode()).await;
     }
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    
+
     // 5. Malicious Payload
     let mut bad_packet = packets_a[0].clone();
     bad_packet.signature[0] ^= 0xFF; // flip bits
