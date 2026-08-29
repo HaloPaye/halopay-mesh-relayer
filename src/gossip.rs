@@ -53,6 +53,25 @@ impl GossipNode {
     }
 
     pub async fn run(&self) {
+        // Startup Replay
+        {
+            let storage = self.storage.lock().await;
+            if let Ok(pending) = storage.get_pending_txs() {
+                for tx_record in pending {
+                    if let Ok(packet) = Packet::decode(&tx_record.payload) {
+                        let relay_packets = crate::protocol::fragment_packet(&packet);
+                        let trans_clone = self.transport.clone();
+                        tokio::spawn(async move {
+                            for p in relay_packets {
+                                let _ = trans_clone.broadcast(&p.encode()).await;
+                                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                            }
+                        });
+                    }
+                }
+            }
+        }
+
         // Hello broadcast background task
         let kp_clone = self.keypair.clone();
         let trans_clone = self.transport.clone();
@@ -121,12 +140,12 @@ impl GossipNode {
                 full_packet.payload = reassembled;
                 full_packet.payload_length = full_packet.payload.len() as u16;
                 full_packet.type_byte &= 0x7F; // Remove fragmentation flag
-                self.process_packet(full_packet).await;
+                Box::pin(self.process_packet(full_packet)).await;
             }
             return;
         }
 
-        self.process_packet(packet).await;
+        Box::pin(self.process_packet(packet)).await;
     }
 
     async fn process_packet(&self, packet: Packet) {
@@ -219,25 +238,27 @@ impl GossipNode {
                     let storage = self.storage.lock().await;
                     if let Ok(pending) = storage.get_pending_txs() {
                         for p_tx in pending {
-                            // We don't have the timestamp easily to decrypt, but wait...
-                            // Actually, we need the timestamp to decrypt. We can't decrypt without it!
-                            // Fallback: If we can't easily decrypt DB rows to get amounts, we will bypass the exact amount sum and just store it, OR we parse it if we store the timestamp.
-                            // Let's assume the DB `added_at` is close enough, or we don't strictly sum here without adding columns.
-                            // Wait, the prompt says "total unsettled offline volume in the local database exceeds 500 USDC".
-                            // If we can't get it, we just sum what we can. 
+                            if let Ok(db_packet) = Packet::decode(&p_tx.payload) {
+                                if db_packet.sender_pubkey == packet.sender_pubkey {
+                                    if let Ok(dec_db) = decrypt_payload(&db_packet.payload, db_packet.timestamp) {
+                                        if let Ok(db_tx_payload) = serde_json::from_slice::<TxPayload>(&dec_db) {
+                                            sum_usdc += db_tx_payload.amount_usdc;
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
                 
-                // Since decrypting DB rows without the exact packet timestamp is impossible (AEAD needs nonce=timestamp),
-                // Fallback: We will just accept the current transaction if it's < 500.
-                if tx_payload.amount_usdc > 500.0 {
+                if sum_usdc + tx_payload.amount_usdc > 500.0 {
+                    self.log("OFFLINE_LIMIT_EXCEEDED", Some(&hash_hex)).await;
                     return;
                 }
 
                 {
                     let mut storage = self.storage.lock().await;
-                    let _ = storage.insert_pending_tx(&hash_hex, &packet.payload);
+                    let _ = storage.insert_pending_tx(&hash_hex, &packet.encode()); // STORE FULL ENCODED PACKET
                 }
 
                 // Broadcast to peers if battery >= 15 or if it's our own transaction

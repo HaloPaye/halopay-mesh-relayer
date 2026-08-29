@@ -13,6 +13,9 @@ pub mod storage;
 pub mod gossip;
 pub mod settlement;
 
+#[cfg(test)]
+mod tests;
+
 use storage::Storage;
 use transport::sim::SimTransport;
 use transport::Transport;

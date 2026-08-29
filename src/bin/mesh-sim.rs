@@ -114,38 +114,63 @@ async fn main() {
     node_a.inject_transaction(TxPayload { nonce: 1, amount_usdc: 10.0 }).await;
     
     tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-    settle_c.process_settlement("http://127.0.0.1:8080/settle").await;
+    sc.process_settlement("http://127.0.0.1:8080/settle").await;
     
     // Allow Acks to propagate back
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
     // 2. Partition & Heal
     println!("--- SCENARIO 2: Partition & Heal ---");
-    trans_a.disconnect_from(id_c); // A is already disconnected from C, just explicit
-    trans_b.disconnect_from(id_c); // B disconnected from C
+    trans_a.disconnect_from(id_c);
+    trans_b.disconnect_from(id_c);
+    trans_c.disconnect_from(id_b);
     node_a.inject_transaction(TxPayload { nonce: 2, amount_usdc: 15.0 }).await;
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     
     // Heal
     trans_b.connect_to(id_c);
-    // B needs to re-gossip or C needs to fetch. Gossip protocols typically rebroadcast on heal.
-    // Wait, the prompt says "On startup... query pending". It doesn't say what triggers sync on heal.
-    // But we can simulate by B injecting or we just show B gets it. Let's just simulate B resending.
-    // Actually, "B syncs to C". If B resends pending? The protocol doesn't have a sync request message.
+    trans_c.connect_to(id_b);
+    // B syncs to C: simulate by querying DB and rebroadcasting pending.
+    {
+        let store = store_b.lock().await;
+        if let Ok(pending) = store.get_pending_txs() {
+            for p in pending {
+                let _ = trans_b.broadcast(&p.payload).await; // rebroadcast full packet
+            }
+        }
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    sc.process_settlement("http://127.0.0.1:8080/settle").await;
     
     // 3. Disappearance
     println!("--- SCENARIO 3: Disappearance ---");
-    // Node B dies... handled by just removing B from connections.
+    trans_a.disconnect_from(id_b); // B dies
+    trans_c.disconnect_from(id_b); // B dies
+    node_a.inject_transaction(TxPayload { nonce: 3, amount_usdc: 20.0 }).await;
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     
     // 4. Injected Duplicates
     println!("--- SCENARIO 4: Injected Duplicates ---");
-    // A and D inject exact same transaction simultaneously
     let tx4 = TxPayload { nonce: 4, amount_usdc: 20.0 };
     let json = serde_json::to_vec(&tx4).unwrap();
     let encrypted = crypto::encrypt_payload(&json, 12345).unwrap();
+    let packets_a = protocol::build_packets(&key_a, protocol::MsgType::TxGossip, &encrypted);
+    
+    // D injects exact same payload at same time
+    let packets_d = protocol::build_packets(&key_a, protocol::MsgType::TxGossip, &encrypted); // Wait, D would sign with their own key, or same tx? "A and D inject the exact same transaction hash simultaneously." A transaction hash is blake3(packet.payload). If it's the exact same transaction hash, they must be identical payloads. Let's just broadcast identical packets.
+    for p in &packets_a {
+        let _ = trans_a.broadcast(&p.encode()).await;
+    }
+    for p in &packets_d {
+        let _ = trans_d.broadcast(&p.encode()).await;
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     
     // 5. Malicious Payload
     println!("--- SCENARIO 5: Malicious Payload ---");
+    let mut bad_packet = packets_a[0].clone();
+    bad_packet.signature[0] ^= 0xFF; // flip bits
+    let _ = trans_a.broadcast(&bad_packet.encode()).await;
 
     tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
 }
