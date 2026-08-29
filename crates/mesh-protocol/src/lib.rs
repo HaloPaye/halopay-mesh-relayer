@@ -1,6 +1,6 @@
-use ed25519_dalek::{VerifyingKey, Signature, SigningKey};
+use ed25519_dalek::SigningKey;
 use std::convert::TryInto;
-use mesh_crypto::{sign_message, verify_signature};
+use mesh_crypto::sign_message;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -103,7 +103,7 @@ pub fn fragment_packet(packet: &Packet) -> Vec<Packet> {
     }
     
     let logical_payload = &packet.payload;
-    let total_chunks = (logical_payload.len() + max_chunk_data - 1) / max_chunk_data;
+    let total_chunks = logical_payload.len().div_ceil(max_chunk_data);
     
     let mut packets = Vec::new();
     for i in 0..total_chunks {
@@ -160,7 +160,7 @@ pub fn build_packets(
         // Fragmented
         let chunk_header_size = 2; // index, total
         let max_chunk_data = max_payload_per_packet - chunk_header_size;
-        let total_chunks = (logical_payload.len() + max_chunk_data - 1) / max_chunk_data;
+        let total_chunks = logical_payload.len().div_ceil(max_chunk_data);
         
         let mut packets = Vec::new();
         for i in 0..total_chunks {
@@ -190,11 +190,7 @@ pub fn build_packets(
 /// Replay protection: rolling window of +/- 300 seconds
 pub fn is_timestamp_valid(timestamp: u64) -> bool {
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-    if timestamp > now + 300 || timestamp + 300 < now {
-        false
-    } else {
-        true
-    }
+    !(timestamp > now + 300 || timestamp + 300 < now)
 }
 
 #[cfg(test)]
