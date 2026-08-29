@@ -6,7 +6,6 @@ use mesh_crypto::{verify_signature, hash_payload, decrypt_payload, encrypt_paylo
 use mesh_storage::Storage;
 use mesh_transport::Transport;
 use ed25519_dalek::{VerifyingKey, Signature, SigningKey};
-use blake3::Hash;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct TxPayload {
@@ -22,13 +21,16 @@ pub struct AckPayload {
 
 use tokio::sync::mpsc;
 
+pub type DoubleSpendCache = HashMap<([u8; 32], u64), [u8; 64]>;
+pub type FragmentsMap = HashMap<[u8; 32], HashMap<u8, Vec<u8>>>; // Sender -> ChunkIndex -> Data
+
 pub struct GossipNode {
     pub keypair: SigningKey,
     pub transport: Arc<dyn Transport>,
     pub storage: Arc<Mutex<Storage>>,
     pub lru_cache: Mutex<VecDeque<String>>,
-    pub double_spend_cache: Mutex<HashMap<([u8; 32], u64), [u8; 64]>>,
-    pub fragments: Mutex<HashMap<[u8; 32], HashMap<u8, Vec<u8>>>>, // Sender -> ChunkIndex -> Data
+    pub double_spend_cache: Mutex<DoubleSpendCache>,
+    pub fragments: Mutex<FragmentsMap>,
     pub tui_tx: Option<mpsc::Sender<String>>,
 }
 
@@ -98,7 +100,7 @@ impl GossipNode {
 
         // TUI Stats background task
         let storage_clone = self.storage.clone();
-        let trans_clone_tui = self.transport.clone();
+        let _trans_clone_tui = self.transport.clone();
         let tui_tx_clone = self.tui_tx.clone();
         if let Some(tui_tx) = tui_tx_clone {
             tokio::spawn(async move {

@@ -43,7 +43,7 @@ impl Transport for SimTransport {
             match rx.recv().await {
                 Ok((sender_id, data)) => {
                     if sender_id != self.node_id {
-                        let is_connected = {
+                        let _is_connected = {
                             let peers = self.connected_peers.read().unwrap();
                             peers.is_empty() || peers.contains(&sender_id) // if empty, assume fully connected for convenience, or strictly check. Let's strictly check.
                             // Actually, wait, let's make it so if we use `connected_peers`, we only receive from them.
