@@ -6,6 +6,9 @@ use ed25519_dalek::{SigningKey};
 use rand_core::OsRng;
 use std::fs;
 
+#[cfg(test)]
+mod tests;
+
 use mesh_storage::Storage;
 use mesh_transport::sim::SimTransport;
 use mesh_transport::Transport;
