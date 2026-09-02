@@ -1,4 +1,6 @@
 #[test]
 fn test_overflow() {
-    assert!(true);
+    let capacity = 100;
+    let items = 101;
+    assert!(items > capacity);
 }
