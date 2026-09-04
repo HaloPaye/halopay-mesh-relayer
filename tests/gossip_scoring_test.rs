@@ -1,4 +1,4 @@
-#[test]
+﻿#[test]
 fn test_gossip_score_decay_calculation() {
     let initial_score = 100.0;
     let decay_factor = 0.9;
