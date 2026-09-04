@@ -1,6 +1,6 @@
-﻿#[test]
+#[test]
 fn test_priority_ordering_logic() {
-    let mut priorities = vec![10u32, 50u32, 20u32, 100u32];
+    let mut priorities = [10u32, 50u32, 20u32, 100u32];
     priorities.sort_by(|a, b| b.cmp(a));
     assert_eq!(priorities[0], 100);
     assert_eq!(priorities[1], 50);
