@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq, Eq)]
+﻿#[derive(Debug, PartialEq, Eq)]
 pub struct FrameHeader {
     pub magic: u16,
     pub payload_len: u32,
