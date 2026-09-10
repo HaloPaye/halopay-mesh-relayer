@@ -1,4 +1,4 @@
-﻿# HaloPay Mesh Relayer - Libp2p Network Topology
+# HaloPay Mesh Relayer - Libp2p Network Topology
 
 ## Architecture Overview
 The HaloPay Mesh Relayer forms a decentralized peer-to-peer transport layer utilizing Libp2p GossipSub v1.2 protocols.
