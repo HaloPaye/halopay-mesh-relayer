@@ -100,7 +100,7 @@ The simulation will run various topologies: Partition & Heal, Relaying, Disappea
 | Maintainer | Contact / Telegram | Role |
 | :--- | :--- | :--- |
 | HaloPay Team | [@HaloPayDev](https://t.me/HaloPayDev) | Core Protocol Engineering |
-| Lead Engineer | security@halopay.io | Security & Operations |
+
 
 ## Contributors
 
