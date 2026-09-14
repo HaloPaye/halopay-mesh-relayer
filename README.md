@@ -5,10 +5,22 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/HaloPaye/halopay-mesh-relayer/actions"><img alt="CI/CD" src="https://img.shields.io/badge/build-passing-brightgreen"></a>
-  <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg">
-  <img alt="Rust" src="https://img.shields.io/badge/rust-daemon-blue">
+  <a href="https://stellar.org"><img alt="Stellar Ecosystem" src="https://img.shields.io/badge/Stellar-Ecosystem-000000?style=flat-square&logo=stellar&logoColor=white"></a>
+  <a href="https://soroban.stellar.org"><img alt="Soroban Compatible" src="https://img.shields.io/badge/Soroban-Compatible-7928ca?style=flat-square&logo=rust&logoColor=white"></a>
+  <a href="https://github.com/HaloPaye/halopay-mesh-relayer/actions"><img alt="CI Status" src="https://img.shields.io/github/actions/workflow/status/HaloPaye/halopay-mesh-relayer/rust.yml?branch=main&style=flat-square&label=CI"></a>
+  <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=flat-square"></a>
+  <img alt="Rust Edition 2021" src="https://img.shields.io/badge/Rust-2021-dea584?style=flat-square&logo=rust">
 </p>
+
+---
+
+## 🌌 Stellar & Soroban Architecture Integration
+
+The HaloPay Mesh Relayer serves as the resilient offline-to-online bridge for the Stellar network:
+
+* **Offline Transaction Encapsulation:** When internet connectivity is lost, HaloPay POS terminals sign Stellar payment envelopes locally. The mesh relayer breaks these envelopes into deterministic 256-byte fragments and propagates them across peer nodes via BLE and LoRa gossip.
+* **Deterministic Double-Spend Prevention:** Before transactions reach an internet-connected gateway, mesh nodes execute BLAKE3 deterministic ordering on Ed25519 signatures, ensuring conflicting nonces are eliminated peer-to-peer without requiring synchronous ledger queries.
+* **Soroban RPC & Horizon Ingestion:** When any mesh peer encounters an active internet gateway, it acts as a relayer, reconstructing the signed transaction envelopes and dispatching them to the HaloPay Settlement API or directly to Stellar Horizon and Soroban RPC nodes for on-chain finality.
 
 ---
 
