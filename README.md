@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/HaloPaye/halopay-mesh-relayer/actions"><img alt="CI Status" src="https://img.shields.io/github/actions/workflow/status/HaloPaye/halopay-mesh-relayer/ci.yml?branch=main&style=flat-square&label=CI"></a>
+  <a href="https://github.com/HaloPaye/halopay-mesh-relayer/actions"><img alt="CI Status" src="https://img.shields.io/github/actions/workflow/status/HaloPaye/halopay-mesh-relayer/rust.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=flat-square"></a>
   <img alt="Rust Edition 2021" src="https://img.shields.io/badge/Rust-2021-dea584?style=flat-square&logo=rust">
 </p>
