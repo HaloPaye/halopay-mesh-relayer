@@ -1,125 +1,86 @@
-<h1 align="center">HaloPay Mesh Relayer</h1>
+# HaloPay Mesh Relayer
 
-<p align="center">
-  A robust, asynchronous Rust daemon designed to facilitate offline transaction settlement in humanitarian zones. It forms a resilient mesh network across POS hardware using BLE and local WiFi direct links to route encrypted payloads out of internet-blackout areas.
-</p>
+An asynchronous Rust daemon for peer-to-peer store-and-forward transaction gossiping and deterministic conflict resolution across hardware partitions and internet blackout zones.
 
-<p align="center">
-  <a href="https://stellar.org"><img alt="Stellar Ecosystem" src="https://img.shields.io/badge/Stellar-Ecosystem-000000?style=flat-square&logo=stellar&logoColor=white"></a>
-  <a href="https://soroban.stellar.org"><img alt="Soroban Compatible" src="https://img.shields.io/badge/Soroban-Compatible-7928ca?style=flat-square&logo=rust&logoColor=white"></a>
-  <a href="https://github.com/HaloPaye/halopay-mesh-relayer/actions"><img alt="CI Status" src="https://img.shields.io/github/actions/workflow/status/HaloPaye/halopay-mesh-relayer/rust.yml?branch=main&style=flat-square&label=CI"></a>
-  <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=flat-square"></a>
-  <img alt="Rust Edition 2021" src="https://img.shields.io/badge/Rust-2021-dea584?style=flat-square&logo=rust">
-</p>
+[![CI Status](https://img.shields.io/github/actions/workflow/status/HaloPaye/halopay-mesh-relayer/rust.yml?branch=main&style=flat-square&label=CI)](https://github.com/HaloPaye/halopay-mesh-relayer/actions)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=flat-square)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-2021-dea584?style=flat-square&logo=rust)](https://www.rust-lang.org)
 
 ---
 
-## 🌌 Stellar & Soroban Architecture Integration
+## Overview
 
-The HaloPay Mesh Relayer serves as the resilient offline-to-online bridge for the Stellar network:
+In telecommunication blackout areas, disaster zones, or rural regions, individual payment devices cannot connect to centralized servers. The **HaloPay Mesh Relayer** forms an ad-hoc local mesh across merchant terminals and battery-powered relay hardware using Bluetooth Low Energy (BLE), local WiFi, and LoRa links.
 
-* **Offline Transaction Encapsulation:** When internet connectivity is lost, HaloPay POS terminals sign Stellar payment envelopes locally. The mesh relayer breaks these envelopes into deterministic 256-byte fragments and propagates them across peer nodes via BLE and LoRa gossip.
-* **Deterministic Double-Spend Prevention:** Before transactions reach an internet-connected gateway, mesh nodes execute BLAKE3 deterministic ordering on Ed25519 signatures, ensuring conflicting nonces are eliminated peer-to-peer without requiring synchronous ledger queries.
-* **Soroban RPC & Horizon Ingestion:** When any mesh peer encounters an active internet gateway, it acts as a relayer, reconstructing the signed transaction envelopes and dispatching them to the HaloPay Settlement API or directly to Stellar Horizon and Soroban RPC nodes for on-chain finality.
+Transaction packets gossip across peer relays until reaching a node with an active internet gateway, where they are reassembled and dispatched for final settlement.
 
 ---
 
-## Core Architecture
+## Architecture (Cargo Workspace)
 
-The project is structured as an Enterprise Cargo Workspace, splitting concerns into highly optimized and testable crates:
-
-1. **mesh-crypto**: Core cryptographic primitives including Ed25519 signing, BLAKE3 hashing, and ChaCha20 encryption.
-2. **mesh-protocol**: Message serialization, binary types, and the highly efficient 256-byte fragmentation protocol.
-3. **mesh-storage**: SQLite persistence schema, mempool state management, and LRU caches.
-4. **mesh-transport**: Hardware layer abstractions for Bluetooth Low Energy (BLE), LoRa, and Simulation traits.
-5. **mesh-node**: The core daemon orchestrator, gossip flood routing logic, and HTTP API settlement client.
-6. **mesh-tui**: A `ratatui`-based terminal dashboard to visualize network topology and settlement states in real-time.
-
-### Architecture Diagram
+The relayer is designed as a modular Cargo Workspace with strict zero-allocation primitives where possible:
 
 ```mermaid
 graph TD
-  POS[Offline POS Device] -->|BLE / WiFi Direct| Node[Mesh Node]
-  Node -->|Gossip Flood| Node2[Peer Mesh Node]
-  Node2 -->|Gossip Flood| Gateway[Internet-Connected Gateway]
-  Gateway -->|Encrypted Payload| API[HaloPay Settlement API]
-  API -->|Settlement ACK| Gateway
+  POS[Offline POS Device] -->|BLE / Local Radio| Node1[Relay Node 1]
+  Node1 -->|Gossip Flood| Node2[Relay Node 2]
+  Node2 -->|Gossip Flood| Gateway[Gateway Node with Internet]
+  Gateway -->|Signed Payload| API[HaloPay Settlement Engine]
 ```
 
-### The Hard Problem: Offline Double Spending
-
-In humanitarian zones without stable internet, merchants must still accept digital USDC payments securely. However, the inability to verify balances in real-time creates a significant attack vector: offline double-spending.
-
-This relayer solves this problem using a deterministic conflict resolution rule natively executed in the mesh layer:
-
-1. **Cryptographic Signatures**: Every transaction is cryptographically signed using Ed25519 by the merchant's POS device.
-2. **Conflict Detection**: If two nodes broadcast conflicting transactions (i.e. same monotonic nonce, same merchant key, but different payloads or signatures), the network mempools instantly detect the anomaly.
-3. **Deterministic Resolution**: The rule is strictly mathematical — **The transaction whose Ed25519 signature produces the lowest BLAKE3 hash wins.**
-4. **Damage Control**: The losing transaction is dropped entirely across the mesh, and a `SettlementFailed` ACK is routed back to the offending UI.
-5. **Exposure Limits**: All routing guarantees are strictly mathematically bound to max damage isolation limits (e.g., a maximum of 500 USDC total offline exposure per partition).
+* **`crates/mesh-crypto`**: Cryptographic primitives including Ed25519 signature verification, BLAKE3 hashing, and ChaCha20-Poly1305 packet encryption.
+* **`crates/mesh-protocol`**: Binary wire protocol, packet serialization, and 256-byte MTU fragment reassembly.
+* **`crates/mesh-storage`**: SQLite persistence, write-ahead log buffers, priority queue mempool, and LRU peer ban lists.
+* **`crates/mesh-transport`**: Abstractions for Bluetooth Low Energy (BLE), socket streams, and simulation harnesses.
+* **`crates/mesh-node`**: Daemon lifecycle orchestrator, gossip routing engine, and outbound settlement clients.
+* **`crates/mesh-tui`**: Terminal user interface for live monitoring of network topology and floating packets.
 
 ---
 
-## Tech Stack
+## The Hard Problem: Offline Double-Spending
 
-- **Language**: Rust
-- **Core Daemon**: Tokio (Async Runtime)
-- **Cryptography**: Ed25519, BLAKE3, ChaCha20
-- **Database**: SQLite (local persistence & mempool)
-- **Monitoring**: `ratatui` (Terminal UI)
-- **Transport**: BLE, LoRa, WiFi Direct
+In partitioned networks without synchronous ledger access, malicious or duplicate transactions must be handled deterministically without central coordinators. The Mesh Relayer resolves conflicting transactions mathematically:
+
+1. **Cryptographic Identity**: Every transaction packet carries an Ed25519 signature generated by the originating terminal.
+2. **Deterministic Conflict Resolution**: If two conflicting transactions share the same monotonic sequence or partition nonce, peer mempools apply a deterministic rule: **the signature producing the lowest BLAKE3 digest wins.**
+3. **Consistent Convergence**: Because BLAKE3 digests are uniformly distributed and immutable, every isolated peer independently arrives at the exact same conclusion without exchanging additional consensus messages. Losing transactions are pruned immediately.
 
 ---
 
-## Setup & Quick Start
+## Quick Start
 
-A standard `Makefile` is provided for CI and deployment commands:
+### Prerequisites
+- Rust 1.75+ (stable toolchain)
+- Cargo
+
+### Building & Testing
 
 ```bash
 # Clone the repository
 git clone https://github.com/HaloPaye/halopay-mesh-relayer.git
 cd halopay-mesh-relayer
 
-# Build the workspace
-make build
+# Run test suite
+cargo test
 
-# Run unit tests
-make test
+# Build release daemon
+cargo build --release
 
-# Lint and format code
-make lint
-
-# Cross-compile for Raspberry Pi / ARM architectures
-make cross-compile-arm
+# Run interactive terminal simulation harness
+cargo run --bin mesh-sim
 ```
 
-### Running the Simulation Harness
+---
 
-To evaluate the system, we provide a massive simulation harness that bootstraps virtual nodes (A, B, C, D) connected via in-memory broadcast channels, mimicking an unstable physical environment.
+## Configuration
 
-```bash
-# Run the simulation harness and launch the TUI dashboard
-make run-sim
-# or: cargo run --bin mesh-sim
-```
-
-The simulation will run various topologies: Partition & Heal, Relaying, Disappearance, Malicious Injections, and Duplicates. The live TUI dashboard will provide a real-time visualization of mempool sizes, active peers, and scrolling gossip/settlement ACKs.
-
-*Note: A `systemd` service file is included in `init/halopay-mesh.service` to deploy the daemon onto a Raspberry Pi or other POS hardware seamlessly.*
-
-## Maintainers & Contact
-
-| Maintainer | Contact / Telegram | Role |
-| :--- | :--- | :--- |
-| HaloPay Team | [@HaloPayDev](https://t.me/HaloPayDev) | Core Protocol Engineering |
-
-
-## Contributors
-
-[![Contributors](https://contrib.rocks/image?repo=HaloPaye/halopay-mesh-relayer)](https://github.com/HaloPaye/halopay-mesh-relayer/graphs/contributors)
+The daemon reads configuration from environment variables or `~/.halopay/config.toml`:
+- `TRANSPORT_MODE`: `sim` (default simulation mode) or `ble` (hardware BLE peripheral mode).
+- `API_URL`: Upstream settlement gateway endpoint.
+- `MESH_NETWORK_ID`: 32-bit network partition identifier.
 
 ---
 
 ## License
 
-This project is licensed under the MIT License.
+Licensed under the Apache License, Version 2.0 - see [LICENSE](LICENSE) for details.
