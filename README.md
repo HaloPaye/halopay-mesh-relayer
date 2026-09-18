@@ -105,12 +105,6 @@ The simulation will run various topologies: Partition & Heal, Relaying, Disappea
 
 *Note: A `systemd` service file is included in `init/halopay-mesh.service` to deploy the daemon onto a Raspberry Pi or other POS hardware seamlessly.*
 
-## Maintainers & Contact
-
-| Maintainer | Contact / Telegram | Role |
-| :--- | :--- | :--- |
-| HaloPay Team | [@HaloPayDev](https://t.me/HaloPayDev) | Core Protocol Engineering |
-
 ## Contributors
 
 [![Contributors](https://contrib.rocks/image?repo=HaloPaye/halopay-mesh-relayer)](https://github.com/HaloPaye/halopay-mesh-relayer/graphs/contributors)
